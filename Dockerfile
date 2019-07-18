@@ -20,12 +20,12 @@ RUN cd opensips_$VERSION \
 FROM debian:stretch
 LABEL maintainer="Vitaly Kovalyshyn"
 
-ENV REFRESHED_AT 2019-07-17
+ENV REFRESHED_AT 2019-07-18
 ENV WEBITEL_MAJOR 19
 ENV VERSION 3.0
 
 RUN apt-get update && apt-get -y upgrade\
-    && apt-get install --no-install-recommends --no-install-suggests -y -q postgresql-client librabbitmq4 libxml2 rsyslog libmicrohttpd12 \
+    && apt-get install --no-install-recommends --no-install-suggests -y -q postgresql-client librabbitmq4 libxml2 rsyslog curl libmicrohttpd12 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 COPY --from=0 /opensips /opensips
