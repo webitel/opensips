@@ -9,12 +9,13 @@ export HOSTNAME=$(hostname)
 sed -i 's/PRIVATE_IPV4/'$PRIVATE1_IPV4'/g' /opensips/etc/opensips/opensips.cfg
 
 if [ "$CONSUL" ]; then
-        curl --request PUT http://$CONSUL:8500/v1/agent/service/register -d '
+        curl -qs -XPUT http://$CONSUL:8500/v1/agent/service/register -d '
         {
           "ID": "'$HOSTNAME'",
           "Name": "opensips",
           "Tags": [
-            "opensips"
+            "opensips",
+            "sip"
           ],
           "Address": "'$PRIVATE0_IPV4'",
           "Port": 5060
@@ -23,6 +24,9 @@ if [ "$CONSUL" ]; then
 fi
 
 # Starting OpenSIPS process
-/opensips/sbin/opensips -E
+if [ "$1" = 'opensips' ]; then
+    /opensips/sbin/opensips -E
+    rsyslogd -n
+fi
 
-rsyslogd -n
+exec "$@"

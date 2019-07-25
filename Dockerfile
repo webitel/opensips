@@ -35,3 +35,4 @@ COPY docker-entrypoint.sh sbin/
 COPY opensips.cfg etc/opensips/
 
 ENTRYPOINT ["sbin/docker-entrypoint.sh"]
+CMD ["opensips"]
