@@ -11,8 +11,8 @@ RUN apt-get update -qq && apt-get -y -q upgrade \
 
 RUN git clone https://github.com/OpenSIPS/opensips.git -b $VERSION opensips_$VERSION
 RUN cd opensips_$VERSION \
-    && make prefix="/opensips" include_modules="db_postgres tls_mgm proto_tls proto_wss xcap presence presence_xml httpd" all \
-    && make prefix="/opensips" include_modules="db_postgres tls_mgm proto_tls proto_wss xcap presence presence_xml httpd" install \
+    && make prefix="/opensips" include_modules="db_postgres tls_mgm proto_tls proto_wss xcap presence presence_xml httpd event_rabbitmq" all \
+    && make prefix="/opensips" include_modules="db_postgres tls_mgm proto_tls proto_wss xcap presence presence_xml httpd event_rabbitmq" install \
     && rm -rf /opensips/share/doc \
     && rm -rf /opensips/share/man
 
@@ -20,7 +20,7 @@ RUN cd opensips_$VERSION \
 FROM debian:stretch
 LABEL maintainer="Vitaly Kovalyshyn"
 
-ENV REFRESHED_AT 2019-07-18
+ENV REFRESHED_AT 2019-09-09
 ENV WEBITEL_MAJOR 19
 ENV VERSION 3.0
 
