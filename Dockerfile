@@ -1,4 +1,4 @@
-FROM debian:stretch
+FROM debian
 
 ENV DEBIAN_FRONTEND noninteractive
 ARG VERSION=3.0
@@ -17,15 +17,16 @@ RUN cd opensips_$VERSION \
     && rm -rf /opensips/share/man
 
 
-FROM debian:stretch
+FROM debian
 LABEL maintainer="Vitaly Kovalyshyn"
 
-ENV REFRESHED_AT 2019-09-09
+ENV REFRESHED_AT 2019-10-23
 ENV WEBITEL_MAJOR 19
 ENV VERSION 3.0
 
 RUN apt-get update && apt-get -y upgrade\
-    && apt-get install --no-install-recommends --no-install-suggests -y -q postgresql-client librabbitmq4 libxml2 rsyslog curl libmicrohttpd12 \
+    && apt-get install --no-install-recommends --no-install-suggests -y -q postgresql-client \
+    librabbitmq4 libxml2 rsyslog curl libmicrohttpd12 sngrep \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 COPY --from=0 /opensips /opensips
