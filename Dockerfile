@@ -20,8 +20,8 @@ RUN cd opensips_$VERSION \
 FROM debian
 LABEL maintainer="Vitaly Kovalyshyn"
 
-ENV REFRESHED_AT 2019-10-31
-ENV WEBITEL_MAJOR 19
+ENV REFRESHED_AT 2020-01-10
+ENV WEBITEL_MAJOR 20
 ENV VERSION 3.0
 
 RUN apt-get update && apt-get -y upgrade\
