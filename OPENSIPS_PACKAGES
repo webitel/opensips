@@ -1,0 +1,14 @@
+# Module package tags to build (must match <TAG>_PKGNAME entries in
+# upstream packaging/debian/rules). Core 'opensips' package is always
+# built and must not be listed here.
+AUTH
+HTTP
+JSON
+POSTGRES
+PRESENCE
+RABBITMQ
+PROTO_TLS
+TLS_WOLFSSL
+TLS_MGM
+PROTO_WSS
+XMLRPC

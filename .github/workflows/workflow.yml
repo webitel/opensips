@@ -1,0 +1,219 @@
+name: Workflow (opensips)
+run-name: "opensips@${{ github.ref_name }}#${{ github.run_number }} - ${{ github.event.head_commit.message }}"
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+    paths:
+      - OPENSIPS_VERSION
+      - OPENSIPS_PACKAGES
+      - scripts/**
+      - .github/workflows/workflow.yml
+
+permissions: { contents: read }
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ARCH: amd64
+
+jobs:
+  prepare:
+    name: Prepare
+    runs-on: [ arc-runner-set ]
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+      tags: ${{ steps.read.outputs.tags }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Resolve build context
+        id: read
+        run: |
+          set -euo pipefail
+          version=$(tr -d '[:space:]' < OPENSIPS_VERSION)
+          tag_list=$(grep -vE '^\s*(#|$)' OPENSIPS_PACKAGES | tr '\n' ' ')
+
+          # Validate that a release tag matches the committed upstream version
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            tag_version="${GITHUB_REF#refs/tags/v}"
+            if [ "$tag_version" != "$version" ]; then
+              echo "::error::tag '$tag_version' does not match OPENSIPS_VERSION '$version'"
+              exit 1
+            fi
+          fi
+
+          {
+            echo "version=$version"
+            echo "tags=$tag_list"
+          } | tee -a "$GITHUB_OUTPUT"
+
+  compile:
+    name: Compile ${{ needs.prepare.outputs.version }}#${{ github.run_number }}
+    needs: [ prepare ]
+    runs-on: [ arc-c-runner-set ]
+    container:
+      image: debian:trixie
+
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TAGS: ${{ needs.prepare.outputs.tags }}
+
+    steps:
+      - name: Install bootstrap tooling
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates git jq rsync \
+            devscripts equivs fakeroot dpkg-dev debhelper \
+            autoconf automake libtool
+
+      - name: Checkout config repo
+        uses: actions/checkout@v6
+        with:
+          path: config
+
+      - name: Clone OpenSIPS source @ ${{ env.VERSION }}
+        run: |
+          git clone --depth 1 --recurse-submodules \
+            -b "$VERSION" \
+            https://github.com/OpenSIPS/opensips.git src
+
+      - name: Install upstream Build-Depends
+        working-directory: src
+        run: |
+          ln -sf packaging/debian debian
+          mk-build-deps --install --remove \
+            --tool 'apt-get -y --no-install-recommends' debian/control
+
+      - name: Build and stage packages
+        run: bash config/scripts/build.sh src "$TAGS"
+
+      - name: Export matrix
+        id: matrix
+        run: |
+          {
+            echo "matrix<<EOF"
+            jq -c . src/stage/matrix.json
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload stage tree
+        uses: actions/upload-artifact@v7
+        with:
+          name: stage-${{ env.ARCH }}
+          retention-days: 1
+          compression-level: 9
+          include-hidden-files: true
+          path: src/stage/
+
+  package:
+    name: Package ${{ matrix.package.pkgname }}
+    needs: [ prepare, compile ]
+    runs-on: [ arc-runner-set ]
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJSON(needs.compile.outputs.matrix) }}
+
+    steps:
+      - name: Download stage tree
+        uses: actions/download-artifact@v8
+        with:
+          name: stage-${{ env.ARCH }}
+          path: stage
+
+      - name: Build .deb
+        uses: webitel/reusable-workflows/actions/nfpm-build@nfpm-build-v2
+        with:
+          nfpm-version: latest
+          formats: deb
+          target: dist
+          maintainer: Webitel <support@webitel.com>
+          homepage: https://opensips.org
+          arch: ${{ env.ARCH }}
+          platform: linux
+          package-name: ${{ matrix.package.pkgname }}
+          package-description: ${{ matrix.package.description }}
+          version: ${{ needs.prepare.outputs.version }}
+          release: ${{ github.run_number }}
+          prerelease: ${{ github.event.repository.default_branch == github.ref_name && 'dev' || '' }}
+          contents: |
+            - src: stage/${{ matrix.package.pkgname }}/files/
+              dst: /
+
+          scripts: ${{ matrix.package.scripts }}
+          depends: ${{ matrix.package.depends }}
+
+      - name: Upload .deb
+        uses: actions/upload-artifact@v7
+        with:
+          name: deb-${{ matrix.package.pkgname }}-${{ env.ARCH }}
+          retention-days: 7
+          path: dist/*.deb
+
+  collect:
+    name: Collect packages
+    needs: [ package ]
+    runs-on: [ arc-runner-set ]
+    steps:
+      - name: Download all per-package artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: deb-*-${{ env.ARCH }}
+          merge-multiple: true
+          path: dist
+
+      - name: List packages
+        run: ls -la dist/
+
+      - name: Upload combined bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-packages-${{ env.ARCH }}
+          retention-days: 7
+          path: dist/*.deb
+
+  publish:
+    name: Publish
+    needs: [ prepare, collect ]
+    permissions:
+      id-token: write
+      actions: read
+      contents: read
+
+    uses: webitel/reusable-workflows/.github/workflows/_publish-deb.yml@v2
+    secrets: inherit
+    with:
+      arch: amd64
+      deb-package-pattern: '*.deb'
+      repository-environment: ${{ github.event.repository.default_branch == github.ref_name && 'acceptance' || format('{0}-releases', needs.prepare.outputs.version) }}
+      deb-component: ${{ github.event.repository.default_branch == github.ref_name && 'dev' || 'main' }}
+      deb-codename: ${{ vars.DEB_CODENAME }}
+      deb-s3-bucket-name: ${{ vars.DEB_S3_BUCKET_NAME }}
+      deb-s3-bucket-region: ${{ vars.DEB_S3_DEFAULT_REGION }}
+      deb-s3-endpoint: ${{ vars.DEB_S3_ENDPOINT }}
+      deb-s3-force-path-style: ${{ vars.DEB_S3_FORCE_PATH_STYLE == 'true' }}
+
+  deploy:
+    name: Deploy
+    needs: [ prepare, publish ]
+    permissions:
+      id-token: write
+      actions: read
+      contents: read
+
+    uses: webitel/reusable-workflows/.github/workflows/_deploy.yml@v2
+    secrets: inherit
+    with:
+      repository-environment: ${{ github.event.repository.default_branch == github.ref_name && 'acceptance' || format('{0}-releases', needs.prepare.outputs.version) }}
+      deb-package-pattern: '*.deb'
+      arch: amd64
