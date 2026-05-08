@@ -182,9 +182,25 @@ jobs:
           retention-days: 7
           path: dist/*.deb
 
+  deploy:
+    name: Deploy
+    needs: [ prepare, collect ]
+    permissions:
+      id-token: write
+      actions: read
+      contents: read
+
+    uses: webitel/reusable-workflows/.github/workflows/_deploy.yml@v2
+    secrets: inherit
+    with:
+      repository-environment: ${{ github.event.repository.default_branch == github.ref_name && 'acceptance' || format('{0}-releases', needs.prepare.outputs.version) }}
+      deb-package-pattern: '*.deb'
+      arch: amd64
+
   publish:
     name: Publish
-    needs: [ prepare, collect ]
+    needs: [ prepare, collect, deploy ]
+    if: always() && !cancelled() && needs.collect.result == 'success' && (needs.deploy.result == 'success' || needs.deploy.result == 'skipped')
     permissions:
       id-token: write
       actions: read
@@ -202,18 +218,3 @@ jobs:
       deb-s3-bucket-region: ${{ vars.DEB_S3_DEFAULT_REGION }}
       deb-s3-endpoint: ${{ vars.DEB_S3_ENDPOINT }}
       deb-s3-force-path-style: ${{ vars.DEB_S3_FORCE_PATH_STYLE == 'true' }}
-
-  deploy:
-    name: Deploy
-    needs: [ prepare, publish ]
-    permissions:
-      id-token: write
-      actions: read
-      contents: read
-
-    uses: webitel/reusable-workflows/.github/workflows/_deploy.yml@v2
-    secrets: inherit
-    with:
-      repository-environment: ${{ github.event.repository.default_branch == github.ref_name && 'acceptance' || format('{0}-releases', needs.prepare.outputs.version) }}
-      deb-package-pattern: '*.deb'
-      arch: amd64
